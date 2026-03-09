@@ -140,11 +140,28 @@ start_up_config = _parse_start_up_config_lines(config_lines=_config_lines)
 
 _qt_local_configs.update(start_up_config)
 
-# 读取tushare token，如果读取失败，抛出warning
-try:
-    TUSHARE_TOKEN = _qt_local_configs['tushare_token']
+def _value_to_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in ['1', 'true', 'yes', 'on']
+    return bool(value)
+
+
+def _resolve_tushare_token(configs: dict) -> str:
+    use_proxy = _value_to_bool(configs.get('tushare_proxy_enabled', False))
+    official_token = configs.get('tushare_token', None)
+    proxy_token = configs.get('tushare_proxy_token', None)
+    if use_proxy and proxy_token:
+        return proxy_token
+    return official_token
+
+
+# 读取tushare token：支持官方token与代理token切换
+TUSHARE_TOKEN = _resolve_tushare_token(_qt_local_configs)
+if TUSHARE_TOKEN:
     ts.set_token(TUSHARE_TOKEN)
-except Exception as e:
+else:
     msg = f'Failed Loading tushare_token, configure it in qteasy.cfg:\n' \
           f'tushare_token = your_token\n' \
           f'for more information, check qteasy tutorial: ' \

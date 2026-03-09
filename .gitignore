@@ -36,6 +36,7 @@ qteasy/log/qteasy.log
 qteasy/log/*
 qteasy/tradelog
 qteasy/tradelog/*
+*tradelog*
 *.log
 qteasy/log/
 *.cnf
@@ -81,3 +82,6 @@ qteasy/qteasy_backup.cfg
 /scripts
 /qteasy_doc_ipynbs
 *.json
+
+*output
+*__pycache__

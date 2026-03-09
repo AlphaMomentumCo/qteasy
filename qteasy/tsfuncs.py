@@ -34,6 +34,39 @@ EXTRA_RETRY_API = [
 ]
 
 
+def _value_to_bool(value) -> bool:
+    """将配置中的布尔值/字符串解析为bool。"""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in ['1', 'true', 'yes', 'on']
+    return bool(value)
+
+
+def _get_pro_api():
+    """根据QT_CONFIG自动构建tushare pro客户端，支持官方与代理模式切换。"""
+    use_proxy = _value_to_bool(QT_CONFIG.get('tushare_proxy_enabled', False))
+    official_token = QT_CONFIG.get('tushare_token', None)
+    proxy_token = QT_CONFIG.get('tushare_proxy_token', None)
+    proxy_url = QT_CONFIG.get('tushare_proxy_url', None)
+
+    token = proxy_token if (use_proxy and proxy_token) else official_token
+    pro = ts.pro_api(token) if token else ts.pro_api()
+
+    # 某些代理服务需要显式设置私有字段，保证与官方API调用方式兼容
+    if token:
+        try:
+            pro._DataApi__token = token
+        except Exception:
+            pass
+    if use_proxy and isinstance(proxy_url, str) and proxy_url:
+        try:
+            pro._DataApi__http_url = proxy_url
+        except Exception:
+            pass
+    return pro
+
+
 # tsfuncs interface function, call this function to extract data
 def acquire_data(api_name, **kwargs):
     """ DataSource模块的接口函数，根据根据table的内容调用相应的tushare API下载数据，并以DataFrame的形式返回数据
@@ -122,7 +155,7 @@ def stock_basic(exchange: str = None):
         exchange = ''
     fields = 'ts_code,symbol,name,area,industry,fullname, enname, cnspell, market, exchange, curr_type, list_status, ' \
              'list_date, delist_date, is_hs'
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.stock_basic(exchange=exchange,
                           list_status=list_status,
                           is_hs=is_hs,
@@ -146,7 +179,7 @@ def hk_stock_basic(ts_code: str = None,
     -------
     """
 
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.hk_basic(ts_code=ts_code, list_status=list_status)
     logger_core.info(f'downloaded {len(res)} rows of data from tushare'
                      f' table stock_basic with ts_code={ts_code}, list_status={list_status}')
@@ -166,7 +199,7 @@ def us_stock_basic(ts_code: str = None,
     -------
     """
 
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.us_basic(ts_code=ts_code,
                        classify=classify,
                        offset=offset,
@@ -215,7 +248,7 @@ def trade_cal(exchange: str = 'SSE',
     2   SSE         20200103    1       20200102
     ...
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.trade_cal(exchange=exchange,
                         start_date=start,
                         end_date=end,
@@ -233,7 +266,7 @@ def hk_trade_cal(start: str = None,
                  end: str = None,
                  is_open: int = None):
     """"""
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.hk_tradecal(start_date=start,
                           end_date=end,
                           is_open=is_open)
@@ -250,7 +283,7 @@ def us_trade_cal(start: str = None,
                  end: str = None,
                  is_open: int = None):
     """"""
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.us_tradecal(start_date=start,
                           end_date=end,
                           is_open=is_open)
@@ -303,7 +336,7 @@ def namechange(ts_code: str = None,
         5       600848.SH   自仪股份  19940324      20010507         其他
     """
     fields = 'ts_code,start_date,name,end_date,ann_date,change_reason'
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.namechange(ts_code=ts_code,
                          start_date=start,
                          end_date=end,
@@ -342,7 +375,7 @@ def new_share(start: str = None,
 
     Examples
     --------
-    >>> pro = ts.pro_api()
+    >>> pro = _get_pro_api()
     >>> df = pro.new_share(start_date='20180901', end='20181018')
     >>> df
             ts_code     ub_code  name  ipo_date    issue_date   amount  market_amount  \
@@ -375,7 +408,7 @@ def new_share(start: str = None,
         11  25.43  20.39          2.00   5.086    0.02
         12  16.07  22.99          6.90  37.145    0.12
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.new_share(start_date=start, end_date=end)
     logger_core.info(f'downloaded {len(res)} rows of data from tushare'
                      f' table new_share with start_date={start}'
@@ -422,7 +455,7 @@ def moneyflow(ts_code: str = None,
         net_mf_vol	    int	    Y	        净流入量（手）
         net_mf_amount	float	Y	        净流入额（万元）
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.moneyflow(ts_code=ts_code, trade_date=trade_date, start_date=start, end_date=end)
     logger_core.info(f'downloaded {len(res)} rows of data from tushare'
                      f' table money_flow with ts_code={ts_code}, trade_date={trade_date}'
@@ -438,7 +471,7 @@ def stk_limit(ts_code: str = None,
     """ 获取个股涨跌停价格
     """
     fields = "ts_code, trade_date, pre_close, up_limit, down_limit"
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.stk_limit(ts_code=ts_code, trade_date=trade_date, start_date=start, end_date=end, fields=fields)
     logger_core.info(f'downloaded {len(res)} rows of data from tushare'
                      f' table stock_limit with ts_code={ts_code}, trade_date={trade_date}'
@@ -454,7 +487,7 @@ def suspend_d(ts_code: str = None,
               suspend_type: str = None) -> pd.DataFrame:
     """ 获取个股停复牌信息
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.suspend_d(ts_code=ts_code, trade_date=trade_date, start_date=start, end_date=end,
                         suspend_type=suspend_type)
     logger_core.info(f'downloaded {len(res)} rows of data from tushare'
@@ -469,7 +502,7 @@ def moneyflow_hsgt(trade_date: str = None,
                    end: str = None) -> pd.DataFrame:
     """ 获取沪深股通资金流向数据
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.moneyflow_hsgt(trade_date=trade_date, start_date=start, end_date=end)
     logger_core.info(f'downloaded {len(res)} rows of data from tushare'
                      f' table moneyflow_hsgt with trade_date={trade_date}, start_date={start}'
@@ -485,7 +518,7 @@ def hsgt_top10(ts_code: str = None,
                market_type: str = None) -> pd.DataFrame:
     """ 获取沪深股通十大成交股
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.hsgt_top10(ts_code=ts_code, trade_date=trade_date, start_date=start, end_date=end,
                          market_type=market_type)
     logger_core.info(f'downloaded {len(res)} rows of data from tushare'
@@ -502,7 +535,7 @@ def ggt_top10(ts_code: str = None,
               market_type: str = None) -> pd.DataFrame:
     """ 获取港股通十大成交股
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.ggt_top10(ts_code=ts_code, trade_date=trade_date, start_date=start, end_date=end, market_type=market_type)
     logger_core.info(f'downloaded {len(res)} rows of data from tushare'
                      f' table ggt_top10 with ts_code={ts_code}, trade_date={trade_date}'
@@ -562,7 +595,7 @@ def stock_company(ts_code: str = None,
     if fields is None:
         fields = 'ts_code,exchange,chairman,manager,secretary,reg_capital,setup_date,province,city,introduction,' \
                  'website,email,office,employees,main_business,business_scope'
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.stock_company(ts_code=ts_code, exchange=exchange, fields=fields)
     logger_core.info(f'downloaded {len(res)} rows of data from tushare'
                      f' table stock_company with ts_code={ts_code}, exchange={exchange}'
@@ -617,7 +650,7 @@ def stk_managers(ts_code: str = None,
     10   000001.SZ  20180130  蔡方方      F  ...       中国     1974   20161107      None
     """
     fields = 'ts_code, ann_date, name, gender, lev, title, edu, national, birthday, begin_date, end_date, resume'
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.stk_managers(ts_code=ts_code, ann_date=ann_date, start=start, end=end, fields=fields)
     logger_core.info(f'downloaded {len(res)} rows of data from tushare'
                      f' table stk_managers with ts_code={ts_code}, ann_date={ann_date}'
@@ -680,7 +713,7 @@ def daily_basic(ts_code: object = None,
     8    000001.SZ    20180703  11.01         0.0000  ...     165.000  1845.000  1845.000000
     9    000001.SZ    20180702  11.01         0.0000  ...     165.000  1845.000  1845.000000
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.daily_basic(ts_code=ts_code,
                           trade_date=trade_date,
                           start_date=start,
@@ -746,7 +779,7 @@ def bak_daily(ts_code: object = None,
     >>> bak_daily(ts_code='000001.SZ', trade_date='20180713')
 
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.bak_daily(ts_code=ts_code,
                         trade_date=trade_date,
                         start_date=start,
@@ -761,7 +794,7 @@ def hk_stock_daily(ts_code: object = None,
                    trade_date: object = None,
                    start: object = None,
                    end: object = None):
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.hk_daily(ts_code=ts_code,
                        trade_date=trade_date,
                        start_date=start,
@@ -776,7 +809,7 @@ def us_stock_daily(ts_code: object = None,
                    trade_date: object = None,
                    start: object = None,
                    end: object = None):
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.us_daily(ts_code=ts_code,
                        trade_date=trade_date,
                        start_date=start,
@@ -791,7 +824,7 @@ def hk_indicators(ts_code: object = None,
                   trade_date: object = None,
                   start: object = None,
                   end: object = None):
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.hk_daily_adj(ts_code=ts_code,
                            trade_date=trade_date,
                            start_date=start,
@@ -806,7 +839,7 @@ def us_indicators(ts_code: object = None,
                   trade_date: object = None,
                   start: object = None,
                   end: object = None):
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.us_daily_adj(ts_code=ts_code,
                            trade_date=trade_date,
                            start_date=start,
@@ -847,7 +880,7 @@ def index_dailybasic(ts_code: object = None,
         pe_ttm	        float	Y	        市盈率TTM
         pb	            float	Y	        市净率
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.index_dailybasic(ts_code=ts_code,
                                trade_date=trade_date,
                                start_date=start,
@@ -882,7 +915,7 @@ def realtime_min(ts_code, freq):
         raise KeyError(f'freq={freq} is not supported from tushare at the moment, '
                        f'must be one of 1min, 5min, 15min, 30min, h')
 
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.rt_min(ts_code=ts_code, freq=freq)
     res.index = pd.to_datetime(res['trade_time'])
     res = res.reindex(columns=['symbol', 'name', 'pre_close', 'open', 'close', 'high', 'low', 'vol', 'amount'])
@@ -900,7 +933,7 @@ def mins1(ts_code,
           start=None,
           end=None):
     # 注意，分钟接口minsxx包含股票、基金、指数、期权的分钟数据，全部都在一张表中，必须先获取权限后下载
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.stk_mins(ts_code=ts_code, start_date=start, end_date=end, freq='1min')
     logger_core.info(f'downloaded {len(res)} rows of data from tushare'
                      f' table stk_mins with ts_code={ts_code}, freq="1min"'
@@ -912,7 +945,7 @@ def mins5(ts_code,
           start=None,
           end=None):
     # 注意，分钟接口minsxx包含股票、基金、指数、期权的分钟数据，全部都在一张表中，必须先获取权限后下载
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.stk_mins(ts_code=ts_code, start_date=start, end_date=end, freq='5min')
     logger_core.info(f'downloaded {len(res)} rows of data from tushare'
                      f' table stk_mins with ts_code={ts_code}, freq="5min"'
@@ -924,7 +957,7 @@ def mins15(ts_code,
            start=None,
            end=None):
     # 注意，分钟接口minsxx包含股票、基金、指数、期权的分钟数据，全部都在一张表中，必须先获取权限后下载
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.stk_mins(ts_code=ts_code, start_date=start, end_date=end, freq='15min')
     logger_core.info(f'downloaded {len(res)} rows of data from tushare'
                      f' table stk_mins with ts_code={ts_code}, freq="15min"'
@@ -936,7 +969,7 @@ def mins30(ts_code,
            start=None,
            end=None):
     # 注意，分钟接口minsxx包含股票、基金、指数、期权的分钟数据，全部都在一张表中，必须先获取权限后下载
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     ts.pro_bar()
     res = pro.stk_mins(ts_code=ts_code, start_date=start, end_date=end, freq='30min')
     logger_core.info(f'downloaded {len(res)} rows of data from tushare'
@@ -949,7 +982,7 @@ def mins60(ts_code,
            start=None,
            end=None):
     # 注意，分钟接口minsxx包含股票、基金、指数、期权的分钟数据，全部都在一张表中，必须先获取权限后下载
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.stk_mins(ts_code=ts_code, start_date=start, end_date=end, freq='60min')
     logger_core.info(f'downloaded {len(res)} rows of data from tushare'
                      f' table stk_mins with ts_code={ts_code}, freq="60min"'
@@ -961,7 +994,7 @@ def ft_mins1(ts_code,
              start=None,
              end=None):
     # 注意，分钟接口ft_minsxx包含期货的分钟数据，必须先获取权限后下载
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.ft_mins(ts_code=ts_code, start_date=start, end_date=end, freq='1min')
     logger_core.info(f'downloaded {len(res)} rows of data from tushare'
                      f' table future_mins with ts_code={ts_code}, freq="1min"'
@@ -973,7 +1006,7 @@ def ft_mins5(ts_code,
              start=None,
              end=None):
     # 注意，分钟接口ft_minsxx包含期货的分钟数据，必须先获取权限后下载
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.ft_mins(ts_code=ts_code, start_date=start, end_date=end, freq='5min')
     logger_core.info(f'downloaded {len(res)} rows of data from tushare'
                      f' table future_mins with ts_code={ts_code}, freq="5min"'
@@ -985,7 +1018,7 @@ def ft_mins15(ts_code,
               start=None,
               end=None):
     # 注意，分钟接口ft_minsxx包含期货的分钟数据，必须先获取权限后下载
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.ft_mins(ts_code=ts_code, start_date=start, end_date=end, freq='15min')
     logger_core.info(f'downloaded {len(res)} rows of data from tushare'
                      f' table future_mins with ts_code={ts_code}, freq="15min"'
@@ -997,7 +1030,7 @@ def ft_mins30(ts_code,
               start=None,
               end=None):
     # 注意，分钟接口ft_minsxx包含期货的分钟数据，必须先获取权限后下载
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.ft_mins(ts_code=ts_code, start_date=start, end_date=end, freq='30min')
     logger_core.info(f'downloaded {len(res)} rows of data from tushare'
                      f' table future_mins with ts_code={ts_code}, freq="30min"'
@@ -1009,7 +1042,7 @@ def ft_mins60(ts_code,
               start=None,
               end=None):
     # 注意，分钟接口ft_minsxx包含期货的分钟数据，必须先获取权限后下载
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.ft_mins(ts_code=ts_code, start_date=start, end_date=end, freq='60min')
     logger_core.info(f'downloaded {len(res)} rows of data from tushare'
                      f' table future_mins with ts_code={ts_code}, freq="60min"'
@@ -1031,7 +1064,7 @@ def daily(ts_code=None,
     Returns
     -------
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.daily(ts_code=ts_code, trade_date=trade_date, start_date=start, end_date=end)
     logger_core.info(f'Downloaded {len(res)} rows from tushare: daily with ts_code={ts_code}, '
                      f'trade_date={trade_date}, start_date={start}, end_date={end}')
@@ -1052,7 +1085,7 @@ def weekly(ts_code=None,
     Returns
     -------
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.weekly(ts_code=ts_code, trade_date=trade_date, start_date=start, end_date=end)
     logger_core.info(f'Downloaded {len(res)} rows from tushare: weekly with ts_code={ts_code}, '
                      f'trade_date={trade_date}, start_date={start}, end_date={end}')
@@ -1073,7 +1106,7 @@ def monthly(ts_code=None,
     Returns
     -------
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.monthly(ts_code=ts_code, trade_date=trade_date, start_date=start, end_date=end)
     logger_core.info(f'Downloaded {len(res)} rows from tushare: monthly with ts_code={ts_code}, '
                      f'trade_date={trade_date}, start_date={start}, end_date={end}')
@@ -1094,7 +1127,7 @@ def index_daily(ts_code=None,
     Returns
     -------
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.index_daily(ts_code=ts_code, trade_date=trade_date, start_date=start, end_date=end)
     logger_core.info(f'Downloaded {len(res)} rows from tushare: index_daily with ts_code={ts_code}, '
                      f'trade_date={trade_date}, start_date={start}, end_date={end}')
@@ -1115,7 +1148,7 @@ def index_weekly(ts_code=None,
     Returns
     -------
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.index_weekly(ts_code=ts_code, trade_date=trade_date, start_date=start, end_date=end)
     logger_core.info(f'Downloaded {len(res)} rows from tushare: index_weekly with ts_code={ts_code}, '
                      f'trade_date={trade_date}, start_date={start}, end_date={end}')
@@ -1136,7 +1169,7 @@ def index_monthly(ts_code=None,
     Returns
     -------
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.index_monthly(ts_code=ts_code, trade_date=trade_date, start_date=start, end_date=end)
     logger_core.info(f'Downloaded {len(res)} rows from tushare: index_monthly with ts_code={ts_code}, '
                      f'trade_date={trade_date}, start_date={start}, end_date={end}')
@@ -1157,7 +1190,7 @@ def fund_daily(ts_code=None,
     Returns
     -------
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.fund_daily(ts_code=ts_code, trade_date=trade_date, start_date=start, end_date=end)
     logger_core.info(f'Downloaded {len(res)} rows from tushare: fund_daily with ts_code={ts_code}, '
                      f'trade_date={trade_date}, start_date={start}, end_date={end}')
@@ -1178,7 +1211,7 @@ def adj_factors(ts_code=None,
     Returns
     -------
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.adj_factor(ts_code=ts_code, trade_date=trade_date, start_date=start, end_date=end)
     logger_core.info(f'Downloaded {len(res)} rows from tushare: adj_factors with ts_code={ts_code}, '
                      f'trade_date={trade_date}, start_date={start}, end_date={end}')
@@ -1199,7 +1232,7 @@ def fund_adj(ts_code=None,
     Returns
     -------
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.fund_adj(ts_code=ts_code, trade_date=trade_date, start_date=start, end_date=end)
     logger_core.info(f'Downloaded {len(res)} rows from tushare: fund_adj with ts_code={ts_code}, '
                      f'trade_date={trade_date}, start_date={start}, end_date={end}')
@@ -1220,7 +1253,7 @@ def fund_share(ts_code=None,
     Returns
     -------
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.fund_share(ts_code=ts_code, trade_date=trade_date, start_date=start, end_date=end)
     logger_core.info(f'Downloaded {len(res)} rows from tushare: fund_share with ts_code={ts_code}, '
                      f'trade_date={trade_date}, start_date={start}, end_date={end}')
@@ -1239,7 +1272,7 @@ def fund_manager(ts_code=None,
     Returns
     -------
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.fund_manager(ts_code=ts_code, ann_date=ann_date, offset=offset)
     logger_core.info(f'Downloaded {len(res)} rows from tushare: fund_manager with ts_code={ts_code}, '
                      f'ann_date={ann_date}, offset={offset}')
@@ -1380,7 +1413,7 @@ def income(ts_code: str,
         start = regulate_date_format(start)
     if end is not None:
         end = regulate_date_format(end)
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     try:
         res = pro.income_vip(ts_code=ts_code,
                              ann_date=rpt_date,
@@ -1628,7 +1661,7 @@ def balance(ts_code: str,
         start = regulate_date_format(start)
     if end is not None:
         end = regulate_date_format(end)
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     try:
         res = pro.balancesheet_vip(ts_code=ts_code,
                                    ann_date=rpt_date,
@@ -1822,7 +1855,7 @@ def cashflow(ts_code: str,
         start = regulate_date_format(start)
     if end is not None:
         end = regulate_date_format(end)
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     try:
         res = pro.cashflow_vip(ts_code=ts_code,
                                ann_date=rpt_date,
@@ -2084,7 +2117,7 @@ def indicators(ts_code: str,
         start = regulate_date_format(start)
     if end is not None:
         end = regulate_date_format(end)
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     try:
         res = pro.fina_indicator_vip(ts_code=ts_code,
                                      ann_date=rpt_date,
@@ -2147,7 +2180,7 @@ def forecast(ts_code: str = None,
         start = regulate_date_format(start)
     if end is not None:
         end = regulate_date_format(end)
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     try:
         res = pro.forecast_vip(ts_code=ts_code,
                                ann_date=ann_date,
@@ -2234,7 +2267,7 @@ def express(ts_code: str = None,
         start = regulate_date_format(start)
     if end is not None:
         end = regulate_date_format(end)
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     try:
         res = pro.express_vip(ts_code=ts_code,
                               ann_date=ann_date,
@@ -2300,7 +2333,7 @@ def dividend(ts_code: str = None,
     """
     fields = 'ts_code, ann_date, end_date, div_proc, stk_div, stk_bo_rate, stk_co_rate, cash_div, cash_div_tax,' \
              ' record_date, ex_date, pay_date, div_listdate, imp_ann_date, base_date, base_share'
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.dividend(ts_code=ts_code,
                        ann_date=ann_date,
                        record_date=record_date,
@@ -2338,7 +2371,7 @@ def top_inst(trade_date: str = None,
         net_buy	        float	Y	    净成交额（元）
         reason	        str	    Y	    上榜理由
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.top_inst(trade_date=trade_date,
                        ts_code=ts_code)
     logger_core.info(
@@ -2380,7 +2413,7 @@ def index_member_all(l1_code: str = None,
         out_date	    str	    Y	剔除日期
         is_new	        str	    Y	是否最新Y是N否
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.index_member_all(l1_code=l1_code,
                                l2_code=l2_code,
                                l3_code=l3_code,
@@ -2420,7 +2453,7 @@ def block_trade(ts_code: str = None,
         buyer	        str	    Y	    买方营业部
         seller	        str	    Y	    卖方营业部
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.block_trade(ts_code=ts_code,
                           trade_date=trade_date,
                           start_date=start,
@@ -2473,7 +2506,7 @@ def stk_holdertrade(ts_code: str = None,
         close_date	    str	    N	    增减持结束日期
 
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.stk_holdertrade(ts_code=ts_code,
                               ann_date=ann_date,
                               start_date=start,
@@ -2518,7 +2551,7 @@ def margin(trade_date: str = None,
         rzrqye	        float	融资融券余额(元)
         rqyl	        float	融券余量(股,份,手)
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.margin(trade_date=trade_date,
                      exchange_id=exchange_id,
                      start_date=start,
@@ -2562,7 +2595,7 @@ def margin_detail(trade_date: str = None,
         rqmcl	        float	融券卖出量(股,份,手)
         rzrqye	        float	融资融券余额(元)
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.margin_detail(trade_date=trade_date,
                             ts_code=ts_code,
                             start_date=start,
@@ -2621,7 +2654,7 @@ def top_list(trade_date: str = None,
     if fields is None:
         fields = 'trade_date,ts_code,name,close,pct_change,turnover_rate,amount,' \
                  'l_sell,l_buy,l_amount,net_amount,net_rate,amount_rate,float_values,reason'
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.top_list(trade_date=trade_date,
                        ts_code=shares,
                        fields=fields)
@@ -2699,7 +2732,7 @@ def index_basic(ts_code: str = None,
     """
     fields = 'ts_code, name, fullname, market, publisher, index_type, category, ' \
              'base_date, base_point, list_date, weight_rule, desc, exp_date'
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.index_basic(ts_code=ts_code,
                           name=name,
                           market=market,
@@ -2716,7 +2749,7 @@ def ths_index(ts_code: str = None,
               exchange: str = None,
               idx_type: str = None) -> pd.DataFrame:
     """ 获取同花顺概念和指数基本信息"""
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.ths_index(ts_code=ts_code,
                         exchange=exchange,
                         type=idx_type)
@@ -2731,7 +2764,7 @@ def index_classify(index_code: str = None,
                    parent_code: str = None,
                    src: str = None) -> pd.DataFrame:
     """ 获取申万行业分类"""
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.index_classify(index_code=index_code,
                              level=level,
                              parent_code=parent_code,
@@ -2792,7 +2825,7 @@ def index_indicators(trade_date: str = None,
     """
     if fields is None:
         fields = 'ts_code,trade_date,turnover_rate,pe,pe_ttm,pb'
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.index_dailybasic(trade_date=trade_date,
                                ts_code=ts_code,
                                start_date=start,
@@ -2836,7 +2869,7 @@ def ths_daily(ts_code: str = None,
         total_mv	    float	N	    总市值
         float_mv	    float	N	    流通市值
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.ths_daily(ts_code=ts_code,
                         trade_date=trade_date,
                         start_date=start,
@@ -2868,7 +2901,7 @@ def ths_member(ts_code: str = None,
         out_date	    str	    N	    剔除日期(暂无)
         is_new	        str	    N	    是否最新Y是N否
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.ths_member(ts_code=ts_code,
                          con_code=code)
     logger_core.info(f'Downloaded {len(res)} rows from tushare: ths_member with ts_code={ts_code}, code={code}')
@@ -2905,7 +2938,7 @@ def ci_daily(ts_code: str = None,
         vol	            float	Y	    成交量（万股）
         amount	        float	Y	    成交额（万元）
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.ci_daily(ts_code=ts_code,
                        trade_date=trade_date,
                        start_date=start,
@@ -2949,7 +2982,7 @@ def sw_daily(ts_code: str = None,
         float_mv	    float	Y	    流通市值（万元）
         total_mv	    float	Y	    总市值（万元）
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.sw_daily(ts_code=ts_code,
                        trade_date=trade_date,
                        start_date=start,
@@ -2990,7 +3023,7 @@ def index_global(ts_code: str = None,
         vol	            float	Y	    成交量 （大部分无此项数据）
         amount	        float	N	    成交额 （大部分无此项数据）
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.index_global(ts_code=ts_code,
                            trade_date=trade_date,
                            start_date=start,
@@ -3035,7 +3068,7 @@ def composite(index: str = None,
         5    399300.SZ  000157.SZ   20180903  0.1699
         6    399300.SZ  000402.SZ   20180903  0.0816
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.index_weight(index_code=index,
                            trade_date=trade_date,
                            start_date=start,
@@ -3107,7 +3140,7 @@ def fund_basic(market: str = None,
     """
     if market is None:
         market = 'E'
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.fund_basic(market=market, status=status)
     logger_core.info(f'Downloaded {len(res)} rows from tushare: fund_basic with market={market}, '
                      f'status={status}')
@@ -3151,7 +3184,7 @@ def fund_net_value(ts_code: str = None,
         4     165509.SZ  1.835449
         ...         ...       ...
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.fund_nav(ts_code=ts_code,
                        nav_date=nav_date,
                        market=market)
@@ -3211,7 +3244,7 @@ def future_basic(exchange: str = None,
         exchange = 'CFFEX'
     fields = 'ts_code,symbol,name,fut_code,multiplier,trade_unit,per_unit,quote_unit,quote_unit_desc,d_mode_desc,' \
              'list_date,delist_date,d_month,last_ddate,trade_time_desc'
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.fut_basic(exchange=exchange,
                         fut_type=future_type,
                         fields=fields)
@@ -3242,7 +3275,7 @@ def fut_mapping(ts_code: str = None,
         trade_date	    str	    Y	    起始日期
         mapping_ts_code	str	    Y	    期货合约代码
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.fut_mapping(ts_code=ts_code,
                           trade_date=trade_date,
                           start_date=start,
@@ -3298,7 +3331,7 @@ def options_basic(exchange: str = None,
     """
     fields = 'ts_code,exchange,name,per_unit,opt_code,opt_type,call_put,exercise_type,exercise_price,s_month,' \
              'maturity_date,list_price,list_date,delist_date,last_edate,last_ddate,quote_unit,min_price_chg'
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.opt_basic(exchange=exchange,
                         call_put=call_put,
                         fields=fields)
@@ -3357,7 +3390,7 @@ def future_daily(trade_date: str = None,
         raise ValueError(f'future code and trade date can not be both None, should provide at least one of them!')
     fields = 'ts_code,trade_date,pre_close,pre_settle,open,high,low,close,' \
              'settle,change1,change2,vol,amount,oi,oi_chg,delv_settle'
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.fut_daily(trade_date=trade_date,
                         ts_code=future,
                         exchange=exchange,
@@ -3407,7 +3440,7 @@ def fut_weekly(ts_code: str = None,
         change1	    float	Y	    (周/月)涨跌1 收盘价-昨结算价
         change2	    float	Y	    (周/月)涨跌2 结算价-昨结算价
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.fut_weekly_monthly(ts_code=ts_code,
                                  trade_date=trade_date,
                                  start_date=start,
@@ -3457,7 +3490,7 @@ def fut_monthly(ts_code: str = None,
         change1	    float	Y	    (周/月)涨跌1 收盘价-昨结算价
         change2	    float	Y	    (周/月)涨跌2 结算价-昨结算价
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.fut_weekly_monthly(ts_code=ts_code,
                                  trade_date=trade_date,
                                  start_date=start,
@@ -3524,7 +3557,7 @@ def options_daily(trade_date: str = None,
     if option is None and trade_date is None:
         raise ValueError(f'one of future and trade_date should be given!')
     fields = 'ts_code,trade_date,pre_close,pre_settle,open,high,low,close,settle,vol,amount,oi'
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.opt_daily(trade_date=trade_date,
                         ts_code=option,
                         exchange=exchange,
@@ -3586,7 +3619,7 @@ def shibor(date=None, start=None, end=None):
         19   20180930  2.6530  2.7660  3.4730  2.8020  2.8470  3.2870  3.4890  3.5210
         20   20180929  2.0730  2.7830  3.3100  2.8020  2.8460  3.2850  3.4890  3.5210
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.shibor(date=date,
                      start_date=start,
                      end_date=end)
@@ -3644,7 +3677,7 @@ def hibor(date=None, start=None, end=None):
     19   20181105  0.44929  0.68500  0.80214  1.04321  1.72500  2.08179  2.31941  2.65857
     20   20181102  0.45571  0.73542  0.87679  1.10536  1.73732  2.10018  2.33276  2.65857
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.hibor(date=date,
                     start_date=start,
                     end_date=end)
@@ -3704,7 +3737,7 @@ def libor(date=None, start=None, end=None, currency=None):
     20   20181102       USD  2.17463  2.21400  2.31788  2.42625  2.59238  2.82888   3.10488
 
     """
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.libor(date=date,
                     start_date=start,
                     end_date=end,
@@ -3716,7 +3749,7 @@ def libor(date=None, start=None, end=None, currency=None):
 
 def wz_index(date=None, start=None, end=None):
     """ 获取温州民间借贷利率指数"""
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.wz_index(date=date,
                        start_date=start,
                        end_date=end)
@@ -3727,7 +3760,7 @@ def wz_index(date=None, start=None, end=None):
 
 def gz_index(date=None, start=None, end=None):
     """ 获取广州民间借贷利率指数"""
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.gz_index(date=date,
                        start_date=start,
                        end_date=end)
@@ -3739,7 +3772,7 @@ def gz_index(date=None, start=None, end=None):
 def cn_gdp(quarter=None, start=None, end=None):
     """ 获取中国国内生产总值"""
     fields = 'quarter,gdp,gdp_yoy,pi,pi_yoy,si,si_yoy,ti,ti_yoy'
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.cn_gdp(q=quarter, start_q=start, end_q=end, fields=fields)
     logger_core.info(f'Downloaded {len(res)} rows from tushare: cn_gdp with quarter={quarter}')
     return res
@@ -3749,7 +3782,7 @@ def cn_cpi(month=None, start=None, end=None):
     """ 获取中国居民消费价格指数"""
     fields = "month, nt_val, nt_yoy, nt_mom, nt_accu, town_val, town_yoy, " \
              "town_mom, town_accu, cnt_val, cnt_yoy, cnt_mom, cnt_accu"
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.cn_cpi(m=month, start_m=start, end_m=end, fields=fields)
     logger_core.info(f'Downloaded {len(res)} rows from tushare: cn_cpi with start_m={start}, end_m={end}')
     return res
@@ -3762,7 +3795,7 @@ def cn_ppi(month=None, start=None, end=None):
              "ppi_mp_p_mom, ppi_cg_mom, ppi_cg_f_mom, ppi_cg_c_mom, ppi_cg_adu_mom, ppi_cg_dcg_mom, ppi_accu, " \
              "ppi_mp_accu, ppi_mp_qm_accu, ppi_mp_rm_accu, ppi_mp_p_accu, ppi_cg_accu, ppi_cg_f_accu, ppi_cg_c_accu, " \
              "ppi_cg_adu_accu, ppi_cg_dcg_accu"
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.cn_ppi(m=month, start_m=start, end_m=end, fields=fields)
     logger_core.info(f'Downloaded {len(res)} rows from tushare: cn_ppi with start_m={start}, end_m={end}')
     return res
@@ -3771,7 +3804,7 @@ def cn_ppi(month=None, start=None, end=None):
 def cn_money(month=None, start=None, end=None):
     """ 获取中国货币供应量"""
     fields = "month, m0, m0_yoy, m0_mom, m1, m1_yoy, m1_mom, m2, m2_yoy, m2_mom"
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.cn_m(m=month, start_m=start, end_m=end, fields=fields)
     logger_core.info(f'Downloaded {len(res)} rows from tushare: cn_money_supply with start_m={start}, end_m={end}')
     return res
@@ -3780,7 +3813,7 @@ def cn_money(month=None, start=None, end=None):
 def cn_sf(month=None, start=None, end=None):
     """ 获取中国社会融资规模"""
     fields = "month, inc_month, inc_cumval, stk_endval"
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.sf_month(m=month, start_m=start, end_m=end, fields=fields)
     logger_core.info(f'Downloaded {len(res)} rows from tushare: cn_social_fin with start_m={start}, end_m={end}')
     return res
@@ -3795,7 +3828,7 @@ def cn_pmi(month=None, start=None, end=None):
              "pmi012000, pmi020100, pmi020101, pmi020102, pmi020200, pmi020201, pmi020202, pmi020300, pmi020301, " \
              "pmi020302, pmi020400, pmi020401, pmi020402, pmi020500, pmi020501, pmi020502, pmi020600, pmi020601, " \
              "pmi020602, pmi020700, pmi020800, pmi020900, pmi021000, pmi030000"
-    pro = ts.pro_api()
+    pro = _get_pro_api()
     res = pro.cn_pmi(m=month, start_m=start, end_m=end, fields=fields)
     logger_core.info(f'Downloaded {len(res)} rows from tushare: cn_pmi with start_m={start}, end_m={end}')
     return res
