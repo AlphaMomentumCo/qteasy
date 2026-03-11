@@ -1146,6 +1146,15 @@ def _plot_loop_result(
     return_months = monthly_return_df.columns
     return_values = monthly_return_df.values
     c = ax7.imshow(return_values, cmap='RdYlGn')
+    # 在热力图中显示每个月的收益率数值
+    for i in range(len(return_years)):
+        for j in range(len(return_months)):
+            val = return_values[i, j]
+            if np.isnan(val):
+                continue
+            text_color = 'white' if abs(val) >= 0.1 else 'black'
+            ax7.text(j, i, f'{val:.1%}', ha='center', va='center',
+                     color=text_color, fontsize=7)
     ax7.set_title('Monthly Return Heat Map')
     ax7.set_xticks(np.arange(len(return_months)))
     ax7.set_yticks(np.arange(len(return_years)))
@@ -1168,6 +1177,16 @@ def _plot_loop_result(
     return_years = y_cum.index
     ax8.barh(np.arange(y_count), pos_y_cum, 1, align='center', facecolor='green', alpha=0.85)
     ax8.barh(np.arange(y_count), neg_y_cum, 1, align='center', facecolor='red', alpha=0.85)
+    # 在柱状图末端标注年度收益率数值
+    max_abs_y_cum = np.nanmax(np.abs(y_cum)) if len(y_cum) else 0
+    label_offset = max_abs_y_cum * 0.02 if max_abs_y_cum > 0 else 0.01
+    x_min, x_max = ax8.get_xlim()
+    x_pad = (x_max - x_min) * 0.02
+    label_x = x_max - x_pad
+    for i, val in enumerate(y_cum):
+        if np.isnan(val):
+            continue
+        ax8.text(label_x, i, f'{val:.1%}', va='center', ha='right', fontsize=7)
     ax8.set_yticks(np.arange(y_count))
     ax8.set_ylim(y_count - 0.5, -0.5)
     ax8.set_yticklabels(list(return_years))
